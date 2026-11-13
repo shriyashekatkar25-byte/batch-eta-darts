@@ -1,0 +1,598 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Batch ETA Darts</title>
+<meta name="description" content="APM Lab: what finish time should an async AI batch promise? A Monte Carlo dart board picks the ETA. Stats 102C Ch1.">
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link href="https://fonts.googleapis.com/css2?family=Shrikhand&family=Pinyon+Script&family=Courier+Prime:wght@400;700&family=DM+Sans:opsz,wght@9..40,400;9..40,600;9..40,800&display=swap" rel="stylesheet">
+<style>
+:root{
+  /* hero: frosting cake */
+  --cream:#FFF3C4; --pipe:#2556C8; --pearl:#F06AA0; --icing-red:#A81F2A; --bal-red:#E02B2B; --bal-yel:#F6CF2E; --bal-grn:#188A55; --bal-blu:#1F6FE0;
+  /* cards: cookie */
+  --dough:#E7B864; --dough-lt:#F3D08A; --choc:#3A2214; --blush:#F4A6C6;
+  /* badges: pink gem */
+  --gem-1:#FBE1EA; --gem-2:#EBA3BD; --gem-3:#C3628C; --gem-ink:#3A0F22; --mist:#ECE7E9;
+  /* sim room: typed letter */
+  --paper:#DDD6CA; --paper-dk:#C9C0B1; --type:#1E1B18; --stamp:#9E2A2B; --ok:#245C3B;
+  --ink:#231A14; --muted:#5E5249; --bg:#F7F1EA;
+}
+*{box-sizing:border-box}
+html{scroll-behavior:smooth}
+body{margin:0;background:var(--bg);color:var(--ink);font-family:"DM Sans",system-ui,sans-serif;line-height:1.55;overflow-x:hidden}
+a{color:inherit}
+.wrap{max-width:1120px;margin:0 auto;padding:0 16px}
+h2{font-family:"Shrikhand",cursive;font-weight:400;font-size:clamp(1.6rem,4vw,2.4rem);line-height:1.1;margin:0 0 .4em;color:var(--icing-red)}
+section{padding:56px 0}
+.kicker{font:700 .78rem/1 "Courier Prime",monospace;letter-spacing:.14em;text-transform:uppercase;color:var(--muted);margin-bottom:10px}
+/* grain overlay */
+.grain{position:relative;isolation:isolate}
+.grain::after{content:"";position:absolute;inset:0;pointer-events:none;z-index:-1;opacity:.35;mix-blend-mode:multiply;
+  background-image:url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='160' height='160'%3E%3Cfilter id='n'%3E%3CfeTurbulence type='fractalNoise' baseFrequency='.9' numOctaves='2' stitchTiles='stitch'/%3E%3CfeColorMatrix values='0 0 0 0 .3 0 0 0 0 .25 0 0 0 0 .2 0 0 0 .5 0'/%3E%3C/filter%3E%3Crect width='160' height='160' filter='url(%23n)'/%3E%3C/svg%3E")}
+
+/* ---------- HERO (cake) ---------- */
+.hero{background:var(--cream);padding:0 0 40px;overflow:hidden}
+.hero .scallop{display:block;width:100%;height:46px}
+.hero-grid{display:grid;grid-template-columns:1.25fr .9fr;gap:28px;align-items:center;padding-top:18px}
+.hero h1{font-family:"Shrikhand",cursive;font-weight:400;color:var(--icing-red);font-size:clamp(2.2rem,6.4vw,4.4rem);line-height:1.02;margin:.15em 0 .3em;text-shadow:2px 2px 0 #fff, 4px 4px 0 var(--pearl)}
+.hero .launch{font-weight:600;background:#fff;border:3px solid var(--pipe);border-radius:999px;display:inline-block;padding:8px 16px;margin:4px 0 16px;box-shadow:4px 4px 0 var(--pipe)}
+.hero .launch a{color:var(--pipe)}
+.byline{font:700 1rem/1.4 "DM Sans";color:var(--ink)}
+.byline span{display:block;font-weight:400;color:var(--muted)}
+.cake-svg{width:100%;height:auto;max-width:420px;justify-self:center}
+.float{animation:bob 4s ease-in-out infinite;transform-origin:center}
+.float.d2{animation-delay:-1.3s}.float.d3{animation-delay:-2.4s}.float.d4{animation-delay:-3.1s}
+@keyframes bob{0%,100%{transform:translateY(0)}50%{transform:translateY(-8px)}}
+.sprinkle{position:absolute;pointer-events:none}
+
+/* ---------- DECISION (cookie cards, masonry) ---------- */
+.decision{background:#FBEFE1}
+.masonry{columns:3 260px;column-gap:18px}
+.cookie{break-inside:avoid;margin:0 0 18px;border:3px solid var(--choc);border-radius:34px 28px 38px 30px;padding:20px 20px 16px;color:var(--choc);position:relative;
+  background:
+   radial-gradient(circle at 70% 4%, var(--choc) 0 5px, transparent 6px),
+   radial-gradient(circle at 92% 6%, var(--choc) 0 4px, transparent 5px),
+   radial-gradient(circle at 98% 50%, var(--choc) 0 5px, transparent 6px),
+   radial-gradient(circle at 2% 30%, var(--choc) 0 4px, transparent 5px),
+   radial-gradient(ellipse at 30% 20%, var(--dough-lt), var(--dough) 70%);
+  box-shadow:0 6px 0 #B7843B, 0 10px 18px rgba(58,34,20,.18)}
+.cookie h3{font-family:"Shrikhand",cursive;font-weight:400;font-size:1.25rem;margin:0 0 6px}
+.cookie p,.cookie li{font-size:.97rem;margin:.3em 0}
+.cookie ul{padding-left:1.1em;margin:.3em 0}
+.cookie .cap{font:700 .72rem/1 "Courier Prime";letter-spacing:.1em;text-transform:uppercase;margin-top:12px;display:flex;justify-content:space-between;opacity:.85}
+.cookie .cheeks{position:absolute;right:16px;bottom:-10px;width:62px;height:20px}
+.inner{background:rgba(255,248,232,.78);border-radius:16px;padding:10px 12px}
+.btn{font:700 .95rem "DM Sans";background:var(--blush);color:var(--choc);border:3px solid var(--choc);border-radius:999px;padding:10px 18px;cursor:pointer;box-shadow:0 4px 0 var(--choc);transition:transform .08s}
+.btn:active{transform:translateY(3px);box-shadow:0 1px 0 var(--choc)}
+.btn.alt{background:var(--dough-lt)}
+.btn:focus-visible,input:focus-visible,select:focus-visible{outline:3px solid var(--pipe);outline-offset:3px}
+
+/* ---------- SIM ROOM (typed letter) ---------- */
+.room{background:var(--paper);font-family:"Courier Prime",monospace;color:var(--type);
+  box-shadow:inset 0 0 120px rgba(60,45,30,.35)}
+.room h2{color:var(--type);font-family:"Courier Prime",monospace;font-weight:700;letter-spacing:-.01em;text-transform:uppercase}
+.room h2 .stampt{display:inline-block;border:3px solid var(--stamp);color:var(--stamp);padding:0 8px;transform:rotate(-3deg);margin-left:6px;font-size:.7em;vertical-align:middle}
+.room-grid{display:grid;grid-template-columns:330px 1fr;gap:22px}
+.controls{background:#EEE8DD;border:1px solid var(--paper-dk);padding:16px;box-shadow:2px 3px 0 var(--paper-dk)}
+.ctl{margin-bottom:14px}
+.ctl label{display:flex;justify-content:space-between;font-weight:700;font-size:.9rem;gap:8px}
+.ctl output{font-weight:400}
+.ctl input[type=range]{width:100%;accent-color:var(--stamp)}
+.ctl select,.ctl input[type=number]{font:inherit;width:100%;padding:6px;border:1px solid var(--type);background:#FAF6EE;color:var(--type)}
+.seg{display:flex;gap:6px;flex-wrap:wrap}
+.seg button{font:700 .9rem "Courier Prime";border:2px solid var(--type);background:#FAF6EE;color:var(--type);padding:6px 10px;cursor:pointer}
+.seg button[aria-pressed=true]{background:var(--type);color:#FAF6EE}
+.btns{display:flex;gap:10px;flex-wrap:wrap;margin-top:8px}
+.sheet{background:#EFE9DE;border:1px solid var(--paper-dk);padding:14px;box-shadow:2px 3px 0 var(--paper-dk);min-width:0}
+.sheet canvas{width:100%;display:block;background:#F6F1E7}
+.sheet .lbl{font-size:.82rem;margin:6px 0 12px;color:#3d3630}
+.typed{font-size:.86rem;white-space:pre-wrap;margin:0;color:#1E1B18;background:#FAF6EE;border:1px dashed #8a7f72;border-radius:0;padding:12px;overflow-x:auto}
+
+/* ---------- KPI badges (pink gem) ---------- */
+.gems{display:grid;grid-template-columns:repeat(4,1fr);gap:14px;margin:0 0 18px;font-family:"DM Sans",sans-serif}
+.gem{position:relative;padding:16px 14px 14px;border-radius:26px 26px 40px 40px;color:var(--gem-ink);overflow:hidden;
+  background:
+    conic-gradient(from 210deg at 35% 30%, rgba(255,255,255,.75), rgba(255,255,255,0) 18%, rgba(255,255,255,.4) 32%, rgba(255,255,255,0) 50%, rgba(255,255,255,.55) 70%, rgba(255,255,255,0) 86%),
+    linear-gradient(150deg,var(--gem-1),var(--gem-2) 55%,var(--gem-3));
+  box-shadow:inset 0 0 0 2px rgba(255,255,255,.6), 0 6px 16px rgba(176,74,122,.28)}
+.gem .nm{padding-right:46px;font-family:"Pinyon Script",cursive;font-size:1.45rem;line-height:1;display:block;color:#1c0a12}
+.gem .v{font-weight:800;font-size:1.7rem;line-height:1.1;display:block;margin-top:6px}
+.gem .s{font-size:.78rem;display:block;font-weight:600}
+.gem .pf{position:absolute;top:10px;right:12px;font:800 .7rem "DM Sans";letter-spacing:.06em;background:#fff;border-radius:999px;padding:3px 8px}
+.gem .pf.fail{background:var(--gem-ink);color:#fff}
+.gem.shine::before{content:"";position:absolute;inset:-40%;background:linear-gradient(115deg,transparent 40%,rgba(255,255,255,.7) 50%,transparent 60%);animation:shine 2.8s ease-out 1}
+@keyframes shine{from{transform:translateX(-60%)}to{transform:translateX(60%)}}
+
+/* ---------- MEMO ---------- */
+.memo{background:#FFF8EA}
+.memo-card{background:#fff;border:3px solid var(--choc);border-radius:18px;padding:22px;box-shadow:8px 8px 0 var(--blush)}
+.memo-card dt{font:700 .78rem "Courier Prime";letter-spacing:.12em;text-transform:uppercase;color:var(--stamp);margin-top:14px}
+.memo-card dd{margin:4px 0 0}
+.vp{margin-top:18px;padding:14px 16px;background:var(--cream);border-left:6px solid var(--pipe);font-weight:600}
+
+/* ---------- MATH + CODE ---------- */
+.math{background:var(--mist)}
+.two{display:grid;grid-template-columns:1fr 1fr;gap:20px}
+.two>*{min-width:0}
+.panel{background:#fff;border-radius:22px;padding:20px;border:2px solid #d9cfd3}
+.eq{font-family:"Courier Prime",monospace;background:var(--gem-1);border-radius:12px;padding:10px 12px;margin:10px 0;overflow-x:auto}
+pre{margin:0;background:var(--type);color:#F3EDE2;padding:16px;border-radius:14px;overflow-x:auto;font:0.84rem/1.5 "Courier Prime",monospace}
+.code h3{font-family:"Courier Prime";margin:0 0 8px}
+.tag{display:inline-block;background:var(--blush);border:2px solid var(--choc);border-radius:999px;padding:2px 10px;font-size:.78rem;font-weight:700;margin:0 4px 4px 0;color:var(--choc)}
+
+footer{background:var(--type);color:#E8E1D6;padding:28px 0 36px;font-size:.92rem}
+footer a{color:#FFD7E6}
+.credits{font-size:11px;color:#BDB3A6;margin-top:10px}
+.credits a{color:#D9CFC2}
+
+@media (max-width:860px){
+  .hero-grid,.room-grid,.two{grid-template-columns:1fr}
+  .gems{grid-template-columns:repeat(2,1fr)}
+  .cake-svg{max-width:300px}
+}
+@media (prefers-reduced-motion:reduce){
+  *,*::before,*::after{animation:none!important;transition:none!important}
+  html{scroll-behavior:auto}
+}
+</style>
+</head>
+<body>
+
+<!-- ================= HERO ================= -->
+<header class="hero grain">
+  <svg class="scallop" viewBox="0 0 1200 46" preserveAspectRatio="none" aria-hidden="true">
+    <rect width="1200" height="46" fill="#FFF3C4"/>
+    <path id="sc" d="M0 0 H1200 V18 Q1185 40 1170 18 Q1155 40 1140 18 Q1125 40 1110 18 Q1095 40 1080 18 Q1065 40 1050 18 Q1035 40 1020 18 Q1005 40 990 18 Q975 40 960 18 Q945 40 930 18 Q915 40 900 18 Q885 40 870 18 Q855 40 840 18 Q825 40 810 18 Q795 40 780 18 Q765 40 750 18 Q735 40 720 18 Q705 40 690 18 Q675 40 660 18 Q645 40 630 18 Q615 40 600 18 Q585 40 570 18 Q555 40 540 18 Q525 40 510 18 Q495 40 480 18 Q465 40 450 18 Q435 40 420 18 Q405 40 390 18 Q375 40 360 18 Q345 40 330 18 Q315 40 300 18 Q285 40 270 18 Q255 40 240 18 Q225 40 210 18 Q195 40 180 18 Q165 40 150 18 Q135 40 120 18 Q105 40 90 18 Q75 40 60 18 Q45 40 30 18 Q15 40 0 18 Z" fill="#2556C8"/>
+    <g fill="#F06AA0">
+      <circle cx="15" cy="34" r="4"/><circle cx="135" cy="34" r="4"/><circle cx="255" cy="34" r="4"/><circle cx="375" cy="34" r="4"/><circle cx="495" cy="34" r="4"/><circle cx="615" cy="34" r="4"/><circle cx="735" cy="34" r="4"/><circle cx="855" cy="34" r="4"/><circle cx="975" cy="34" r="4"/><circle cx="1095" cy="34" r="4"/>
+    </g>
+    <g fill="#F6CF2E"><circle cx="75" cy="34" r="3.5"/><circle cx="195" cy="34" r="3.5"/><circle cx="315" cy="34" r="3.5"/><circle cx="435" cy="34" r="3.5"/><circle cx="555" cy="34" r="3.5"/><circle cx="675" cy="34" r="3.5"/><circle cx="795" cy="34" r="3.5"/><circle cx="915" cy="34" r="3.5"/><circle cx="1035" cy="34" r="3.5"/><circle cx="1155" cy="34" r="3.5"/></g>
+  </svg>
+  <div class="wrap hero-grid">
+    <div>
+      <div class="kicker">APM Lab · Decision prototype</div>
+      <h1>I promise a finish time I can keep.</h1>
+      <div class="launch">Mirrors: <a href="https://docs.databricks.com/aws/en/release-notes/product/2026/november#ai-functions-asynchronous-api-beta" target="_blank" rel="noopener">AI Functions Asynchronous API (Beta), Nov 9 2026</a></div>
+      <p style="max-width:56ch;margin:0 0 14px">Up to 50,000 parse / extract / classify requests go in as one batch. The moment a user submits, the product has to say <em>when</em> it will be done. Which number should that be?</p>
+      <div class="byline">Shriya Shekatkar<span>UCLA · Stats 102C Monte Carlo Methods</span></div>
+    </div>
+    <svg class="cake-svg" viewBox="0 0 400 400" role="img" aria-labelledby="cakeT">
+      <title id="cakeT">Drawn frosted cake with balloons and a stopwatch on top</title>
+      <defs>
+        <radialGradient id="gR" cx=".35" cy=".3" r=".7"><stop offset="0" stop-color="#fff" stop-opacity=".9"/><stop offset=".18" stop-color="#E02B2B"/><stop offset="1" stop-color="#8E1616"/></radialGradient>
+        <radialGradient id="gY" cx=".35" cy=".3" r=".7"><stop offset="0" stop-color="#fff" stop-opacity=".9"/><stop offset=".18" stop-color="#F6CF2E"/><stop offset="1" stop-color="#B98F0B"/></radialGradient>
+        <radialGradient id="gG" cx=".35" cy=".3" r=".7"><stop offset="0" stop-color="#fff" stop-opacity=".9"/><stop offset=".18" stop-color="#188A55"/><stop offset="1" stop-color="#0B4C2E"/></radialGradient>
+        <radialGradient id="gB" cx=".35" cy=".3" r=".7"><stop offset="0" stop-color="#fff" stop-opacity=".9"/><stop offset=".18" stop-color="#1F6FE0"/><stop offset="1" stop-color="#0F3A80"/></radialGradient>
+      </defs>
+      <g class="float"><line x1="110" y1="150" x2="150" y2="215" stroke="#3A2214" stroke-width="2"/><circle cx="105" cy="105" r="44" fill="url(#gR)"/></g>
+      <g class="float d2"><line x1="200" y1="110" x2="200" y2="200" stroke="#3A2214" stroke-width="2"/><circle cx="200" cy="72" r="42" fill="url(#gY)"/></g>
+      <g class="float d3"><line x1="290" y1="150" x2="250" y2="215" stroke="#3A2214" stroke-width="2"/><circle cx="296" cy="108" r="40" fill="url(#gB)"/></g>
+      <g class="float d4"><circle cx="58" cy="190" r="26" fill="url(#gG)"/></g>
+      <!-- cake body -->
+      <rect x="60" y="225" width="280" height="140" rx="22" fill="#FFF8DA" stroke="#2556C8" stroke-width="5"/>
+      <path d="M60 250 q17.5 22 35 0 q17.5 22 35 0 q17.5 22 35 0 q17.5 22 35 0 q17.5 22 35 0 q17.5 22 35 0 q17.5 22 35 0 q17.5 22 35 0" fill="none" stroke="#2556C8" stroke-width="9" stroke-linecap="round"/>
+      <path d="M62 340 q17.5 -18 35 0 q17.5 -18 35 0 q17.5 -18 35 0 q17.5 -18 35 0 q17.5 -18 35 0 q17.5 -18 35 0 q17.5 -18 35 0 q17.5 -18 33 0" fill="none" stroke="#F06AA0" stroke-width="8" stroke-linecap="round"/>
+      <g fill="#F06AA0"><circle cx="95" cy="262" r="6"/><circle cx="165" cy="262" r="6"/><circle cx="235" cy="262" r="6"/><circle cx="305" cy="262" r="6"/></g>
+      <!-- stopwatch topper -->
+      <g transform="translate(200 214)">
+        <rect x="-8" y="-50" width="16" height="10" rx="3" fill="#A81F2A"/>
+        <circle r="34" cy="-8" fill="#fff" stroke="#A81F2A" stroke-width="6"/>
+        <line x1="0" y1="-8" x2="0" y2="-32" stroke="#3A2214" stroke-width="4" stroke-linecap="round"/>
+        <line x1="0" y1="-8" x2="18" y2="2" stroke="#3A2214" stroke-width="4" stroke-linecap="round"/>
+      </g>
+      <text x="200" y="312" text-anchor="middle" font-family="Shrikhand" font-size="30" fill="#A81F2A">ETA p90</text>
+      <!-- star sprinkles -->
+      <g fill="#F6CF2E"><path d="M110 290l3 6 7 1-5 5 1 7-6-3-6 3 1-7-5-5 7-1z"/><path d="M300 296l3 6 7 1-5 5 1 7-6-3-6 3 1-7-5-5 7-1z"/></g>
+      <g fill="#188A55"><circle cx="140" cy="300" r="3"/><circle cx="262" cy="320" r="3"/><circle cx="90" cy="320" r="3"/></g>
+      <g fill="#1F6FE0"><circle cx="250" cy="292" r="3"/><circle cx="160" cy="326" r="3"/><circle cx="320" cy="322" r="3"/></g>
+    </svg>
+  </div>
+</header>
+
+<main>
+<!-- ================= DECISION ================= -->
+<section class="decision" id="decision">
+  <div class="wrap">
+    <div class="kicker">Board 1 · The decision</div>
+    <h2>Which finish time goes on the submit screen?</h2>
+    <div class="masonry">
+      <article class="cookie">
+        <h3>Customer problem</h3>
+        <div class="inner"><p>An insurance ops lead drops 40,000 claim PDFs into a volume and calls the async API. She has a 9 a.m. review meeting. Today she gets "submitted" and nothing else, so she polls, guesses, and over-plans. A wrong finish time is worse than none: she will cancel the meeting or run it on half the data.</p></div>
+        <div class="cap"><span>pin: problem</span><span>persona: ops lead</span></div>
+        <svg class="cheeks" viewBox="0 0 62 20" aria-hidden="true"><ellipse cx="10" cy="10" rx="9" ry="7" fill="#F4A6C6"/><ellipse cx="52" cy="10" rx="9" ry="7" fill="#F4A6C6"/></svg>
+      </article>
+      <article class="cookie">
+        <h3>Proposed change</h3>
+        <div class="inner"><p>Show one headline ETA the moment a batch is accepted, computed by simulating thousands of possible runs of <em>this</em> batch (size, function mix, chosen concurrency, current queue). The headline is a chosen percentile of those runs; a "likely by" P50 sits beside it in smaller type.</p></div>
+        <div class="cap"><span>pin: change</span><span>scope: submit + status page</span></div>
+      </article>
+      <article class="cookie">
+        <h3>Success metric</h3>
+        <div class="inner"><p><strong>On-time rate ≥ 90%</strong>: share of batches that finish before the ETA we showed at submit time, measured weekly over all batches above 1,000 requests.</p></div>
+        <div class="cap"><span>pin: north star</span><span>window: weekly</span></div>
+      </article>
+      <article class="cookie">
+        <h3>Guardrails</h3>
+        <div class="inner"><ul>
+          <li><strong>Padding:</strong> shown ETA ÷ median actual ≤ 1.6 (no lazy over-promising)</li>
+          <li><strong>Bad surprises:</strong> P(actual &gt; 1.5 × ETA) ≤ 2%</li>
+          <li><strong>Throttling:</strong> rate-limited retries ≤ 1% of requests</li>
+          <li><strong>Cost:</strong> spend per 1k requests ≤ +5% vs. no-retry baseline</li>
+        </ul></div>
+        <div class="cap"><span>pin: guardrails</span><span>4 thresholds</span></div>
+      </article>
+      <article class="cookie">
+        <h3>Stakeholders</h3>
+        <div class="inner"><ul>
+          <li>AI Functions eng + serving capacity (queue model, concurrency caps)</li>
+          <li>Design / docs (how a percentile reads to a non-statistician)</li>
+          <li>Field + support (escalations when a promise is missed)</li>
+          <li>FinOps-minded admins (cost per 1k requests)</li>
+        </ul></div>
+        <div class="cap"><span>pin: people</span><span>DRI: PM</span></div>
+      </article>
+      <article class="cookie">
+        <h3>What makes it hard</h3>
+        <div class="inner"><p>Document parsing has a heavy tail (a few 300-page scans), queues are busier on weekday mornings, and higher concurrency finishes sooner but triggers rate-limit retries that cost money. One honest number has to absorb all three.</p></div>
+        <div class="cap"><span>pin: tension</span><span>speed vs trust vs cost</span></div>
+      </article>
+    </div>
+  </div>
+</section>
+
+<!-- ================= SIM ROOM ================= -->
+<section class="room grain" id="sim">
+  <div class="wrap">
+    <div class="kicker" style="color:#3d3630">Board 2 · Live simulation (seeded, simulated data)</div>
+    <h2>The ETA dart board <span class="stampt">Paid in full?</span></h2>
+    <p style="max-width:70ch;margin:0 0 16px">The ETA comes from a forecast model at submit time; each dart is one simulated <em>actual</em> run of the same batch. A dart that lands left of the ETA line finished on time. The fraction that lands inside is our estimate of the on-time rate, and it tightens like 1/√n as darts pile up.</p>
+
+    <div class="gems" id="gems" aria-live="polite">
+      <div class="gem" id="g1"><span class="pf">—</span><span class="nm">On time</span><span class="v">—</span><span class="s">target 90%, within 95% band</span></div>
+      <div class="gem" id="g2"><span class="pf">—</span><span class="nm">Padding</span><span class="v">—</span><span class="s">ETA ÷ median, ≤ 1.6</span></div>
+      <div class="gem" id="g3"><span class="pf">—</span><span class="nm">Bad surprise</span><span class="v">—</span><span class="s">P(&gt;1.5×ETA), ≤ 2%</span></div>
+      <div class="gem" id="g4"><span class="pf">—</span><span class="nm">Cost drift</span><span class="v">—</span><span class="s">vs no-retry, ≤ +5%</span></div>
+    </div>
+
+    <div class="room-grid">
+      <form class="controls" id="ctl" onsubmit="return false" aria-label="Simulation controls">
+        <div class="ctl"><label for="n">Batch size <output id="nO"></output></label><input id="n" type="range" min="1000" max="50000" step="1000" value="40000"></div>
+        <div class="ctl"><label for="mix">Share that is document parsing <output id="mixO"></output></label><input id="mix" type="range" min="0" max="100" step="5" value="45"></div>
+        <div class="ctl"><label for="c">Concurrency (parallel slots) <output id="cO"></output></label><input id="c" type="range" min="8" max="128" step="8" value="48"></div>
+        <div class="ctl"><label id="pctL">Headline ETA percentile</label>
+          <div class="seg" role="group" aria-labelledby="pctL" id="pct">
+            <button type="button" data-p="50" aria-pressed="false">P50</button><button type="button" data-p="75" aria-pressed="false">P75</button><button type="button" data-p="90" aria-pressed="true">P90</button><button type="button" data-p="95" aria-pressed="false">P95</button>
+          </div></div>
+        <div class="ctl"><label for="busy">Queue conditions</label>
+          <select id="busy"><option value="0">Quiet (nights, weekends)</option><option value="1" selected>Mixed (typical week)</option><option value="2">Busy (weekday 9–11 a.m.)</option></select></div>
+        <div class="ctl"><label for="aware" style="justify-content:flex-start;gap:10px;font-weight:700"><input id="aware" type="checkbox"> ETA reads the live queue</label>
+          <div style="font-size:.8rem">Off: the ETA model assumes a typical week. On: it sees today's queue.</div></div>
+        <div class="ctl"><label for="seed">Seed</label><input id="seed" type="number" value="42" min="1" max="999999"></div>
+        <div class="btns"><button type="button" class="btn" id="run">Throw 2,000 darts</button><button type="button" class="btn alt" id="more">+500 darts</button></div>
+      </form>
+
+      <div class="sheet">
+        <canvas id="board" height="300" aria-label="Dart board: simulated completion times versus the shown ETA" role="img"></canvas>
+        <div class="lbl">Each dot = one simulated run. x = finish time (minutes). Red line = headline ETA; dashed = 1.5×ETA. Ink dots finished on time, red-stamped dots were late.</div>
+        <canvas id="conv" height="170" aria-label="Running estimate of on-time rate with 95% band" role="img"></canvas>
+        <div class="lbl">Running on-time estimate with ±1.96·SE band (the Law of Large Numbers, live).</div>
+        <pre class="typed" id="ledger" aria-live="polite"></pre>
+      </div>
+    </div>
+  </div>
+</section>
+
+<!-- ================= MEMO ================= -->
+<section class="memo" id="memo">
+  <div class="wrap">
+    <div class="kicker">Board 3 · Director memo (rewrites itself from the simulation)</div>
+    <h2>Memo: the ETA we put in writing</h2>
+    <div class="memo-card">
+      <dl>
+        <dt>Decision</dt><dd id="mDec"></dd>
+        <dt>Evidence</dt><dd id="mEv"></dd>
+        <dt>Risks</dt><dd id="mRisk"></dd>
+        <dt>Rollout / experiment plan</dt><dd id="mPlan"></dd>
+        <dt>Next step</dt><dd id="mNext"></dd>
+      </dl>
+      <div class="vp"><span style="font:700 .78rem 'Courier Prime';letter-spacing:.12em;text-transform:uppercase;color:#2556C8">What I'd tell the VP in one sentence</span><br><span id="mVP"></span></div>
+    </div>
+  </div>
+</section>
+
+<!-- ================= MATH ================= -->
+<section class="math" id="math">
+  <div class="wrap">
+    <div class="kicker">Board 4 · The math, from my Monte Carlo course</div>
+    <h2>Throwing darts to price a promise</h2>
+    <div class="two">
+      <div class="panel">
+        <h3 style="margin-top:0">Fraction inside = probability</h3>
+        <p>The oldest Monte Carlo trick: to find the area of a strange shape, throw random darts at a box around it and count how many land inside. Here the "shape" is the set of futures where a batch finishes before its ETA. Nobody can write that down in closed form (heavy-tailed documents, queue waits, retries), but we can <em>simulate</em> one future cheaply. So we simulate thousands.</p>
+        <div class="eq">p̂ = (# runs with T ≤ ETA) / n &nbsp;&nbsp; count ~ Binomial(n, p)</div>
+        <p>The count of hits is Binomial, so p̂ is unbiased and its variance is p(1−p)/n. Four times the darts halves the error bar. That is why the band in the chart pinches as darts accumulate, and why "+500 darts" barely moves a 2,000-dart estimate.</p>
+        <div class="eq">SE = √(p̂(1−p̂)/n) &nbsp;&nbsp; 95% band ≈ p̂ ± 1.96·SE</div>
+      </div>
+      <div class="panel">
+        <h3 style="margin-top:0">Average height × width</h3>
+        <p>Each run's finish time itself uses the second Ch1 idea: an expectation is a sample mean. Inside one run we draw 240 request durations, average them, and scale by batch size ÷ concurrency. That is "width × average height": the total work is the area under the per-request time curve.</p>
+        <div class="eq">T ≈ queue wait + (N / C) · mean(t₁…t₂₄₀) · capacity + straggler</div>
+        <p>Product example: cost per 1k requests is also an area, list price × (1 + retry rate) averaged over the mix, so the same simulation prices the cost guardrail for free. The Strong Law of Large Numbers is the promise underneath: with a fixed seed and enough darts, every estimate settles on the true value for this model.</p>
+        <p><span class="tag">seeded RNG</span><span class="tag">Binomial counts</span><span class="tag">1/n variance</span><span class="tag">SLLN</span></p>
+      </div>
+    </div>
+  </div>
+</section>
+
+<!-- ================= CODE ================= -->
+<section class="code" id="code" style="background:#FBEFE1">
+  <div class="wrap">
+    <div class="kicker">Board 5 · How I'd run it on real data</div>
+    <h2>From darts to a daily table</h2>
+    <div class="two">
+      <div>
+        <h3>SQL · did our promises hold?</h3>
+<pre>-- illustrative table names
+WITH b AS (
+  SELECT batch_id, request_count, fn_mix_parse_share,
+         concurrency, submitted_at, shown_eta_at, finished_at,
+         timestampdiff(MINUTE, submitted_at, finished_at)  AS actual_min,
+         timestampdiff(MINUTE, submitted_at, shown_eta_at) AS eta_min
+  FROM   apm_lab.ai_batch.batch_runs
+  WHERE  submitted_at &gt;= current_date() - INTERVAL 28 DAYS
+    AND  request_count &gt;= 1000
+)
+SELECT date_trunc('WEEK', submitted_at)              AS wk,
+       avg(CASE WHEN actual_min &lt;= eta_min THEN 1 ELSE 0 END) AS on_time_rate,
+       percentile(eta_min / actual_min, 0.5)          AS padding_ratio,
+       avg(CASE WHEN actual_min &gt; 1.5*eta_min THEN 1 ELSE 0 END) AS bad_surprise_rate
+FROM b GROUP BY 1 ORDER BY 1;</pre>
+      </div>
+      <div>
+        <h3>Python · the ETA engine</h3>
+<pre>import numpy as np
+rng = np.random.default_rng(42)
+
+def eta(n, parse_share, conc, durations, q=0.90, runs=4000):
+    # durations: empirical per-request seconds by function,
+    # sampled from apm_lab.ai_batch.request_log
+    T = np.empty(runs)
+    for r in range(runs):
+        k = rng.random(240) &lt; parse_share
+        t = np.where(k, rng.choice(durations["parse"], 240),
+                        rng.choice(durations["other"], 240))
+        cap  = rng.uniform(0.9, 1.4)          # fleet load
+        wait = rng.uniform(0, 12)             # queue minutes
+        T[r] = wait + n / conc * t.mean() * cap / 60
+    hit = (T &lt;= np.quantile(T, q)).mean()
+    se  = np.sqrt(hit * (1 - hit) / runs)
+    return np.quantile(T, q), hit, se</pre>
+      </div>
+    </div>
+  </div>
+</section>
+</main>
+
+<footer>
+  <div class="wrap">
+    <p style="margin:0 0 6px">Unofficial concept prototype by Shriya Shekatkar. All data is simulated. Not affiliated with any company.</p>
+    <p style="margin:0">← <a href="https://shriyashekatkar25-byte.github.io/apm-lab/">Back to the APM Lab gallery</a></p>
+    <p class="credits">Design inspired by:
+      <a href="https://www.pinterest.com/pin/1073264154971341246/" target="_blank" rel="noopener">“My birthday” by Tanisihaly</a> ·
+      <a href="https://www.pinterest.com/pin/714242822132261155/" target="_blank" rel="noopener">“Cherry Doll” by VOODOO DOLL</a> ·
+      <a href="https://www.pinterest.com/pin/1078752917011309345/" target="_blank" rel="noopener">“My heart” (pink heart gem)</a> ·
+      <a href="https://www.pinterest.com/pin/350295677242390381/" target="_blank" rel="noopener">“Paid in full” letter by Select Student Loan</a></p>
+  </div>
+</footer>
+
+<script>
+(function(){
+"use strict";
+const reduce = window.matchMedia && window.matchMedia("(prefers-reduced-motion: reduce)").matches;
+const $ = id => document.getElementById(id);
+
+function mulberry32(a){return function(){a|=0;a=a+0x6D2B79F5|0;let t=Math.imul(a^a>>>15,1|a);t=t+Math.imul(t^t>>>7,61|t)^t;return((t^t>>>14)>>>0)/4294967296;}}
+
+const S = {pct:90, runs:[], fc:[], throttles:[], rng:null, animId:null};
+
+function params(){
+  return {n:+$("n").value, mix:+$("mix").value/100, c:+$("c").value, busy:+$("busy").value, aware:$("aware").checked, seed:Math.max(1,+$("seed").value||1)};
+}
+// one request duration in seconds (synthetic)
+function reqTime(rng, mix){
+  const u = rng();
+  if(rng() < mix){                       // document parsing: heavy tail
+    if(u < 0.06) return 30 + 60*rng();   // big scans
+    return 4 + 8*rng();
+  }
+  return rng() < 0.5 ? 0.4 + 0.8*rng() : 1.5 + 2.5*rng(); // classify | extract
+}
+function throttleRate(c){ return Math.max(0,(c-48)/420) + 0.002; }
+
+function oneRun(rng, p){
+  const thr = throttleRate(p.c);
+  let sum = 0, m = 240, retries = 0;
+  for(let i=0;i<m;i++){
+    let t = reqTime(rng, p.mix);
+    if(rng() < thr){ t += reqTime(rng, p.mix) + 2; retries++; }
+    sum += t;
+  }
+  const mean = sum/m;
+  const busy = p.busy===2 ? 1 : p.busy===1 ? (rng()<0.3?1:0) : 0;
+  const cap  = busy ? 1.0 + 0.8*rng() : 0.85 + 0.4*rng();
+  const wait = busy ? 40*rng() : 8*rng();
+  const strag = reqTime(rng, p.mix) * (1 + 2*rng()) / 60;
+  const T = wait + (p.n / p.c) * mean * cap / 60 + strag;
+  return {T, retryShare: retries/m};
+}
+function priceBase(mix){ return mix*3.0 + (1-mix)*0.8; } // $ per 1k, synthetic
+
+function simulate(k){
+  const p = params();
+  for(let i=0;i<k;i++){ const r = oneRun(S.rng, p); S.runs.push(r.T); S.throttles.push(r.retryShare); }
+}
+function quantile(arr,q){ const s=[...arr].sort((a,b)=>a-b); const i=(s.length-1)*q; const lo=Math.floor(i), hi=Math.ceil(i); return s[lo]+(s[hi]-s[lo])*(i-lo); }
+
+function stats(){
+  const R = S.runs, n = R.length; if(!n) return null;
+  const eta = quantile(S.fc, S.pct/100), med = quantile(R, .5);
+  let hit=0, bad=0; for(const t of R){ if(t<=eta) hit++; if(t>1.5*eta) bad++; }
+  const ph = hit/n, se = Math.sqrt(ph*(1-ph)/n);
+  const thr = S.throttles.reduce((a,b)=>a+b,0)/n;
+  const p = params();
+  const cost = priceBase(p.mix)*(1+thr), drift = thr; // relative drift
+  return {n, eta, med, ph, se, pad: eta/med, bad: bad/n, thr, cost, drift, p, p95: quantile(R,.95), p50: med};
+}
+
+function fmtMin(m){ if(m<90) return Math.round(m)+" min"; const h=Math.floor(m/60), mm=Math.round(m%60); return h+" h "+String(mm).padStart(2,"0")+" m"; }
+function pct(x,d=1){ return (100*x).toFixed(d)+"%"; }
+
+function setGem(id, val, pass){
+  const g=$(id); g.querySelector(".v").textContent=val;
+  const pf=g.querySelector(".pf"); pf.textContent = pass?"PASS":"FAIL"; pf.className = "pf"+(pass?"":" fail");
+  if(!reduce){ g.classList.remove("shine"); void g.offsetWidth; g.classList.add("shine"); }
+}
+
+/* ---------- canvases ---------- */
+function fit(cv){ const r=cv.getBoundingClientRect(), d=window.devicePixelRatio||1; const h=+cv.getAttribute("height"); cv.width=Math.max(1,r.width*d); cv.height=h*d; cv.style.height=h+"px"; const x=cv.getContext("2d"); x.setTransform(d,0,0,d,0,0); return {x, w:r.width, h}; }
+
+function drawBoard(st, upto){
+  const {x,w,h} = fit($("board"));
+  x.fillStyle="#F6F1E7"; x.fillRect(0,0,w,h);
+  if(!st) return;
+  const R=S.runs, maxT=Math.max(quantile(R,.995), st.eta*1.6), pad=34;
+  const sx = t => pad + (w-2*pad)*Math.min(t,maxT)/maxT;
+  // axis
+  x.strokeStyle="#1E1B18"; x.lineWidth=1; x.beginPath(); x.moveTo(pad,h-26); x.lineTo(w-pad,h-26); x.stroke();
+  x.fillStyle="#1E1B18"; x.font="12px 'Courier Prime', monospace"; x.textAlign="center";
+  const step = niceStep(maxT/5);
+  for(let t=0;t<=maxT;t+=step){ const X=sx(t); x.beginPath(); x.moveTo(X,h-26); x.lineTo(X,h-21); x.stroke(); x.fillText(Math.round(t), X, h-8); }
+  // dots: stacked beeswarm by bins
+  const bins = new Map(), bw = 5, dr = 2.2;
+  const lim = Math.min(upto, R.length);
+  for(let i=0;i<lim;i++){
+    const t=R[i], X=sx(t), b=Math.round(X/bw);
+    const k=(bins.get(b)||0); bins.set(b,k+1);
+    const Y = h-32 - (k*4.2) % (h-60);
+    const late = t>st.eta;
+    x.fillStyle = late ? "#9E2A2B" : "#1E1B18";
+    x.globalAlpha = late?0.85:0.7;
+    x.beginPath(); x.arc(b*bw, Y, dr, 0, 6.283); x.fill();
+  }
+  x.globalAlpha=1;
+  // ETA line
+  const E=sx(st.eta); x.strokeStyle="#9E2A2B"; x.lineWidth=3; x.beginPath(); x.moveTo(E,10); x.lineTo(E,h-26); x.stroke();
+  x.setLineDash([6,5]); x.lineWidth=2; const E2=sx(st.eta*1.5); x.beginPath(); x.moveTo(E2,10); x.lineTo(E2,h-26); x.stroke(); x.setLineDash([]);
+  // stamp label
+  x.save(); x.translate(Math.min(E+8,w-150),22); x.rotate(-0.04);
+  x.strokeStyle="#9E2A2B"; x.lineWidth=2; x.strokeRect(0,-14,140,22); x.fillStyle="#9E2A2B"; x.font="bold 13px 'Courier Prime', monospace"; x.textAlign="left";
+  x.fillText("ETA P"+S.pct+" "+fmtMin(st.eta), 6, 2); x.restore();
+}
+function niceStep(v){ const p=Math.pow(10,Math.floor(Math.log10(v))); const m=v/p; return (m<1.5?1:m<3.5?2:m<7.5?5:10)*p; }
+
+function drawConv(st, upto){
+  const {x,w,h} = fit($("conv"));
+  x.fillStyle="#F6F1E7"; x.fillRect(0,0,w,h);
+  if(!st) return;
+  const R=S.runs, eta=st.eta, n=Math.min(upto,R.length), pad=34;
+  const lo=Math.max(0, st.ph-0.2), hi=Math.min(1, st.ph+0.12);
+  const sy=v=>10+(h-34)*(1-(v-lo)/(hi-lo)), sx=i=>pad+(w-2*pad)*i/Math.max(1,R.length);
+  // target line 90%
+  x.strokeStyle="#245C3B"; x.setLineDash([4,4]); x.beginPath(); x.moveTo(pad,sy(0.9)); x.lineTo(w-pad,sy(0.9)); x.stroke(); x.setLineDash([]);
+  x.fillStyle="#245C3B"; x.font="12px 'Courier Prime', monospace"; x.fillText("target 90%", w-pad-80, sy(0.9)-4);
+  let hit=0; const up=[], dn=[], mid=[];
+  for(let i=0;i<n;i++){ if(R[i]<=eta) hit++; if(i>=20 && (i%4===0||i===n-1)){ const p=hit/(i+1), se=Math.sqrt(p*(1-p)/(i+1)); up.push([sx(i),sy(Math.min(hi,p+1.96*se))]); dn.push([sx(i),sy(Math.max(lo,p-1.96*se))]); mid.push([sx(i),sy(Math.max(lo,Math.min(hi,p)))]); } }
+  if(mid.length>1){
+    x.fillStyle="rgba(158,42,43,.18)"; x.beginPath(); up.forEach((q,i)=>i?x.lineTo(q[0],q[1]):x.moveTo(q[0],q[1])); for(let i=dn.length-1;i>=0;i--) x.lineTo(dn[i][0],dn[i][1]); x.closePath(); x.fill();
+    x.strokeStyle="#1E1B18"; x.lineWidth=2; x.beginPath(); mid.forEach((q,i)=>i?x.lineTo(q[0],q[1]):x.moveTo(q[0],q[1])); x.stroke();
+  }
+  x.fillStyle="#1E1B18"; x.textAlign="left"; x.fillText(pct(hi,0), 2, sy(hi)+10); x.fillText(pct(lo,0), 2, sy(lo));
+  x.textAlign="right"; x.fillText("n = "+n, w-pad, h-6);
+}
+
+/* ---------- memo + ledger ---------- */
+function render(st){
+  const p=st.p;
+  const okHit = st.ph + 1.96*st.se >= 0.90;
+  const okPad = st.pad <= 1.6, okBad = st.bad <= 0.02, okCost = st.drift <= 0.05;
+  setGem("g1", pct(st.ph), okHit);
+  setGem("g2", st.pad.toFixed(2)+"×", okPad);
+  setGem("g3", pct(st.bad), okBad);
+  setGem("g4", "+"+pct(st.drift), okCost);
+  const passes=[okHit,okPad,okBad,okCost].filter(Boolean).length;
+  const thrOK = st.thr<=0.01;
+  $("ledger").textContent =
+`RE: batch of ${p.n.toLocaleString()} requests · ${Math.round(p.mix*100)}% parsing · ${p.c} slots
+Runs simulated ........ ${st.n.toLocaleString()}
+Likely by (P50) ....... ${fmtMin(st.p50)}
+Headline ETA (P${S.pct}) ... ${fmtMin(st.eta)}
+On-time rate .......... ${pct(st.ph)}  ± ${pct(1.96*st.se)}
+Throttled retries ..... ${pct(st.thr,2)}  ${thrOK?"(ok)":"(over 1% guardrail)"}
+Cost per 1k (sim) ..... $${st.cost.toFixed(2)}
+Status ................ ${passes===4 && thrOK ? "PAID IN FULL: all guardrails hold" : "OUTSTANDING: "+(4-passes+(thrOK?0:1))+" guardrail(s) breached"}`;
+
+  const which = S.pct;
+  let dec, risk, plan, next, vp;
+  const failing=[]; if(!okHit) failing.push("on-time rate"); if(!okPad) failing.push("padding"); if(!okBad) failing.push("bad surprises"); if(!okCost||!thrOK) failing.push("throttling cost");
+  if(failing.length===0){
+    dec = `Ship the P${which} ETA as the headline ("Done by about ${fmtMin(st.eta)}"), with P50 "${fmtMin(st.p50)}" as the "likely by" line. At ${p.c} slots this batch clears every guardrail.`;
+    vp = `We can promise this ${p.n.toLocaleString()}-request batch in ${fmtMin(st.eta)} and keep that promise about ${Math.round(st.ph*100)} times out of 100, without padding it or paying for retries.`;
+  } else if(!p.aware && p.busy===2 && !okHit){
+    dec = `Do not ship a queue-blind ETA. In busy hours a model that assumes a typical week keeps only ${pct(st.ph,0)} of its P${which} promises. Ship the ETA only once it reads the live queue (toggle it on and watch the on-time badge recover).`;
+    vp = `The ETA is only as honest as its view of the queue, so wiring in live queue depth is the launch blocker, not the math.`;
+  } else if(which<90 && !okHit){
+    dec = `Do not ship a P${which} headline: it is right only ${pct(st.ph,0)} of the time, so roughly ${Math.round((1-st.ph)*10)} in 10 users would see us miss. Move the headline to P90 and keep P${which} as the "likely by" line.`;
+    vp = `A P${which} ETA is a coin flip dressed up as a promise; P90 is the smallest number we can stand behind.`;
+  } else if(!okCost||!thrOK){
+    dec = `Keep the P${which} ETA, but cap default concurrency below ${p.c} slots: at this setting rate-limit retries hit ${pct(st.thr,1)} of requests and push cost up ${pct(st.drift,1)}, which buys speed users did not ask for.`;
+    vp = `We can promise a good finish time without the extra ${p.c - 48 > 0 ? "parallelism" : "slots"}; the fast setting mostly buys retries.`;
+  } else if(!okPad){
+    dec = `P${which} is too padded for this mix (ETA is ${st.pad.toFixed(2)}× the typical finish). Show P90, or split heavy-tail parsing batches so the tail stops inflating the promise.`;
+    vp = `Our promise is safe but bloated by a few giant documents; splitting them out makes it both safe and tight.`;
+  } else {
+    dec = `Ship P${which} with a live re-estimate after the first 5% of requests complete; the headline alone misses the ${failing.join(" and ")} guardrail for this queue.`;
+    vp = `One number at submit time is not enough under this queue; we should re-forecast once real progress arrives.`;
+  }
+  risk = `Busy-hour queues widen the spread (try "Busy"); parsing-heavy batches carry a 6% heavy-document tail that dominates P95; model drift if real per-request durations differ from the request log. Missing ${pct(1-st.ph,0)} of promises costs trust faster than a 10-minute later ETA does.`;
+  plan = `Dark-launch the ETA engine for 2 weeks: compute and log the ETA on every batch without showing it, then score on-time rate and padding per percentile. Then 50/50 test "no ETA" vs "P90 + P50" on new workspaces; primary metric: share of users who poll status more than 10 times (should drop), guardrails as above.`;
+  next = `Pull 28 days of request durations by function from the request log, replace the synthetic duration model, and re-run this board for the three most common batch shapes.`;
+  $("mDec").textContent=dec;
+  $("mEv").textContent=`${st.n.toLocaleString()} seeded runs (seed ${p.seed}) of a ${p.n.toLocaleString()}-request batch: P50 ${fmtMin(st.p50)}, P${which} ${fmtMin(st.eta)}, P95 ${fmtMin(st.p95)}. On-time rate ${pct(st.ph)} ± ${pct(1.96*st.se)} (95% band). Padding ${st.pad.toFixed(2)}×, bad surprises ${pct(st.bad)}, retry cost drift +${pct(st.drift)}. ${passes} of 4 guardrail badges pass.`;
+  $("mRisk").textContent=risk; $("mPlan").textContent=plan; $("mNext").textContent=next; $("mVP").textContent=vp;
+}
+
+function animate(from){
+  cancelAnimationFrame(S.animId);
+  const st=stats();
+  if(reduce){ drawBoard(st,S.runs.length); drawConv(st,S.runs.length); render(st); return; }
+  let k=from; render(st);
+  const tick=()=>{ k=Math.min(S.runs.length,k+60); drawBoard(st,k); drawConv(st,k); if(k<S.runs.length) S.animId=requestAnimationFrame(tick); };
+  tick();
+}
+
+function forecast(){
+  const p=params(), q=Object.assign({},p,{busy: p.aware ? p.busy : 1}), r=mulberry32(p.seed*7919+13);
+  S.fc=[]; for(let i=0;i<3000;i++) S.fc.push(oneRun(r,q).T);
+}
+function reset(){ const p=params(); S.rng=mulberry32(p.seed); S.runs=[]; S.throttles=[]; forecast(); simulate(2000); animate(0); }
+
+function syncLabels(){
+  $("nO").textContent=(+$("n").value).toLocaleString();
+  $("mixO").textContent=$("mix").value+"%";
+  $("cO").textContent=$("c").value;
+}
+["n","mix","c"].forEach(id=>$(id).addEventListener("input",syncLabels));
+["n","mix","c","busy","seed","aware"].forEach(id=>$(id).addEventListener("change",reset));
+$("run").addEventListener("click",reset);
+$("more").addEventListener("click",()=>{ const f=S.runs.length; simulate(500); animate(f); });
+$("pct").addEventListener("click",e=>{ const b=e.target.closest("button"); if(!b) return; S.pct=+b.dataset.p; $("pct").querySelectorAll("button").forEach(x=>x.setAttribute("aria-pressed", x===b?"true":"false")); animate(0); });
+let rt; window.addEventListener("resize",()=>{ clearTimeout(rt); rt=setTimeout(()=>{ const st=stats(); drawBoard(st,S.runs.length); drawConv(st,S.runs.length); },120); });
+syncLabels(); reset();
+})();
+</script>
+</body>
+</html>
